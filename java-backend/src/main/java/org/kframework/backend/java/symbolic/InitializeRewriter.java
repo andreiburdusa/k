@@ -214,9 +214,16 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
             rewritingContext.stateLog.open("prove-" + Integer.toString(Math.abs(mod.hashCode())));
             rewritingContext.setExecutionPhase(false);
             List<Rule> rules = stream(mod.rules())
-                    .sorted(Comparator.comparingInt(rule -> rule.body().hashCode()))
+                    //.sorted(Comparator.comparingInt(rule -> rule.body().hashCode()))
                     .filter(r -> r.att().contains(Att.specification())).collect(Collectors.toList());
             ProcessProofRules processProofRules = new ProcessProofRules(rules).invoke(rewritingContext, initCounterValue, module, definition);
+
+            org.kframework.backend.java.kil.Rule specAutomaton = stream(mod.rules())
+                    .filter(r -> r.att().contains(JavaBackend.SPEC_AUTOMATON))
+                    .map(r -> processProofRules.convert(r))
+                    .findFirst().orElseThrow(
+                            () -> KEMException.criticalError("Spec automaton not generated"));
+
             List<org.kframework.backend.java.kil.Rule> specRules = processProofRules.getJavaRules();
             KOREtoBackendKIL converter = processProofRules.getConverter();
             TermContext termContext = processProofRules.getTermContext();
@@ -252,7 +259,7 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
                         }
                         rewritingContext.stateLog.log(StateLog.LogEvent.REACHINIT,   lhs.term(), lhs.constraint());
                         rewritingContext.stateLog.log(StateLog.LogEvent.REACHTARGET, rhs.term(), rhs.constraint());
-                        return rewriter.proveRule(r, lhs, rhs, specRules, kem, javaBoundaryPattern);
+                        return rewriter.proveRule(r, lhs, rhs, specRules, specAutomaton, kem, javaBoundaryPattern);
                     })
                     .flatMap(List::stream)
                     .collect(Collectors.toList());
@@ -362,10 +369,14 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
                 converter = new KOREtoBackendKIL(module, definition, termContext.global(), false);
                 termContext.setKOREtoBackendKILConverter(converter);
                 javaRules = rules.stream()
-                        .map(r -> converter.convert(null, r))
+                        .map(this::convert)
                         .map(this::evaluateRule)
                         .collect(Collectors.toList());
                 return this;
+            }
+
+            public org.kframework.backend.java.kil.Rule convert(Rule rule) {
+                return converter.convert(null, rule);
             }
 
             public org.kframework.backend.java.kil.Rule evaluateRule(org.kframework.backend.java.kil.Rule rule) {
