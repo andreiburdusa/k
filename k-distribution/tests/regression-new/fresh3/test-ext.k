@@ -27,7 +27,6 @@ module EVM
     configuration
       <kevm>
         <k> $PGM:EthereumSimulation </k>
-        <schedule> $SCHEDULE:Schedule </schedule>
       </kevm>
 endmodule
 
