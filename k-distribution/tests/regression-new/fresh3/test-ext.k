@@ -1,54 +1,34 @@
 // Copyright (c) 2019 K Team. All Rights Reserved.
 
 module EVM-DATA
-    imports STRING-BUFFER
-    imports MAP-SYMBOLIC
-    imports COLLECTIONS
+    imports STRING
 
-    syntax KResult ::= Int
-
-    syntax JSONList ::= List{JSON,","}
-    syntax JSONKey  ::= String | Int
-    syntax JSON     ::= String
-                      | JSONKey ":" JSON
-                      | "{" JSONList "}"
-                      | "[" JSONList "]"
- // ------------------------------------
+    syntax JSON ::= String
+ // ----------------------
 endmodule
 
 module EVM
-    imports STRING
     imports EVM-DATA
-
-    syntax Schedule ::= "DEFAULT"
-    syntax EthereumSimulation ::= ".EthereumSimulation"
-    syntax StatusCode ::= ".StatusCode"
 
     configuration
       <kevm>
-        <k> $PGM:EthereumSimulation </k>
+        <k> $PGM:EthereumCommand </k>
       </kevm>
+    syntax EthereumCommand
 endmodule
 
 module ETHEREUM-SIMULATION
     imports EVM
-    imports K-REFLECTION
 
-    syntax EthereumSimulation ::= ".EthereumSimulation"
-                                | EthereumCommand EthereumSimulation
- // ----------------------------------------------------------------
-
-    syntax EthereumCommand ::= "load" JSON
-                             | "mkTX" Int
- // -------------------------------------
-    rule <k> load "transaction" : [ REST ] => mkTX !ID:Int ... </k>
+    syntax EthereumCommand ::= "load" JSON | "mkTX" Int
+ // ---------------------------------------------------
+    rule <k> load "transaction" => mkTX !ID:Int ... </k>
 endmodule
 
 module TEST-EXT
-    imports EVM
     imports ETHEREUM-SIMULATION
 
-    syntax KItem ::= "#next" "[" "PUSH" "(" Int "," Int ")" "]"
+    syntax KItem ::= "step"
 
-    rule <k> #next [ PUSH( N , M ) ] => . ... </k>
+    rule <k> step => . ... </k>
 endmodule
