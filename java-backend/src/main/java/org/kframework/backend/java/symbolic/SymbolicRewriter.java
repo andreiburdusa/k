@@ -168,6 +168,11 @@ public class SymbolicRewriter {
                                                         boolean proofFlag, int step, ConstrainedTerm initTerm) {
         global.stateLog.log(StateLog.LogEvent.NODE, subject.term(), subject.constraint());
         List<ConstrainedTerm> results = new ArrayList<>();
+        if (definition.mainAutomaton() == null) {
+            //If there are no regular rules, do nothing.
+            return results;
+        }
+
         List<FastRuleMatcher.RuleMatchResult> matches = theFastMatcher.matchRulePattern(
                 subject,
                 narrowing,
