@@ -76,7 +76,7 @@ public class SymbolicRewriter {
         this.constructor = constructor;
         this.definition = global.getDefinition();
         this.transitions = transitions;
-        this.theFastMatcher = new FastRuleMatcher(global, definition.ruleTable.size());
+        this.theFastMatcher = new FastRuleMatcher(global);
         this.transition = true;
         this.global = global;
         parseLogCells();
@@ -168,9 +168,6 @@ public class SymbolicRewriter {
                                                         boolean proofFlag, int step, ConstrainedTerm initTerm) {
         global.stateLog.log(StateLog.LogEvent.NODE, subject.term(), subject.constraint());
         List<ConstrainedTerm> results = new ArrayList<>();
-        if (definition.mainAutomaton() == null) {
-            return results;
-        }
         List<FastRuleMatcher.RuleMatchResult> matches = theFastMatcher.matchRulePattern(
                 subject,
                 narrowing,
@@ -623,7 +620,7 @@ public class SymbolicRewriter {
     public List<ConstrainedTerm> proveRule(
             Rule rule, ConstrainedTerm initialTerm,
             ConstrainedTerm targetTerm,
-            List<Rule> specRules, Rule specAutomaton, KExceptionManager kem,
+            KExceptionManager kem,
             @Nullable Rule boundaryPattern) {
         List<ConstrainedTerm> proofResults = new ArrayList<>();
         List<ConstrainedTerm> successResults = new ArrayList<>();
@@ -708,7 +705,7 @@ public class SymbolicRewriter {
 
                     //Attempt to apply a spec rule, except on first step.
                     if (step > 1) {
-                        ConstrainedTerm result = applySpecRules(term, specRules, specAutomaton, step);
+                        ConstrainedTerm result = applySpecRules(term, step);
                         if (result != null) {
                             nextStepLogEnabled = true;
                             logStep(step, v, term, true, alreadyLogged, initialTerm);
@@ -1090,22 +1087,20 @@ public class SymbolicRewriter {
     /**
      * Applies the first applicable specification rule and returns the result.
      */
-    private ConstrainedTerm applySpecRules(ConstrainedTerm constrainedTerm, List<Rule> specRules, Rule specAutomaton,
-                                           int step) {
+    private ConstrainedTerm applySpecRules(ConstrainedTerm constrainedTerm, int step) {
         if (global.javaExecutionOptions.logRulesPublic) {
             System.err.format("\nSpec rule application phase, step %d\n" +
                     "==========================================\n", step);
         }
-
-        FastRuleMatcher specMatcher = new FastRuleMatcher(global, specRules.size());
-        List<Rule> automatonMatchedRules = specMatcher.matchSpecRule(constrainedTerm, specRules, specAutomaton,
-                constrainedTerm.termContext());
+        List<Pair<Rule, Integer>> automatonMatchedRules =
+                theFastMatcher.matchWithAutomaton(constrainedTerm, definition.specAutomaton());
 
         if (global.javaExecutionOptions.logRulesPublic && !automatonMatchedRules.isEmpty()) {
             System.err.format("\nSpec rule application, rules matched by automaton: %d\n" +
                     "------------------------------------------\n", automatonMatchedRules.size());
         }
-        for (Rule specRule : automatonMatchedRules) {
+        for (Pair<Rule, Integer> match : automatonMatchedRules) {
+            Rule specRule = match.getLeft();
             ConstrainedTerm pattern = specRule.createLhsPattern(constrainedTerm.termContext());
             ConjunctiveFormula constraint = constrainedTerm.matchImplies(pattern, true, false,
                     new FormulaContext(FormulaContext.Kind.SpecRule, specRule, global), specRule.matchingSymbols());
