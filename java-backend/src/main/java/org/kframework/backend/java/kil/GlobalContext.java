@@ -34,7 +34,7 @@ import java.util.Map;
 public class GlobalContext implements Serializable {
     private Definition def;
     public final transient FileSystem fs;
-    public final Stage stage;
+    public Stage stage;
     public final transient EqualityOperations equalityOps;
     public final transient SMTOperations constraintOps;
     public final transient KItemOperations kItemOps;

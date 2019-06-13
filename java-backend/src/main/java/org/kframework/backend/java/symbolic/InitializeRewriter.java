@@ -212,10 +212,12 @@ public class InitializeRewriter implements Function<org.kframework.definition.De
             rewritingContext.stateLog.open("prove-" + Integer.toString(Math.abs(specModule.hashCode())));
             rewritingContext.setExecutionPhase(false);
 
+            rewritingContext.stage = Stage.INITIALIZING;
             ProcessProofRules processProofRules = new ProcessProofRules(specModule);
             KOREtoBackendKIL converter = processProofRules.converter;
             TermContext termContext = processProofRules.termContext;
             org.kframework.backend.java.kil.Rule javaBoundaryPattern = convertToJavaPattern(converter, boundaryPattern);
+            rewritingContext.stage = Stage.REWRITING;
 
             // rename all variables to avoid any potential conflicts with the rules in the semantics
             List<org.kframework.backend.java.kil.Rule> proofObligationRules = processProofRules.specRules.stream()
