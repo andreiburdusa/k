@@ -28,7 +28,7 @@ import java.util.List;
 public final class KastOptions {
 
     @Parameter(description="<file>")
-    private List<String> parameters;
+    public List<String> parameters;
 
     public Reader stringToParse() {
         checkFileExprExclusion();
@@ -134,6 +134,9 @@ public final class KastOptions {
             return InputModes.class;
         }
     }
+
+    @Parameter(names="--definition", description="Read a K definition instead of a program.")
+    public boolean definition = false;
 
     @ParametersDelegate
     public Experimental experimental = new Experimental();

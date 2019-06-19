@@ -3,17 +3,26 @@ package org.kframework.kast;
 
 import com.google.inject.Inject;
 import com.google.inject.Provider;
+import org.apache.commons.io.FilenameUtils;
+
 import org.kframework.attributes.Source;
 import org.kframework.backend.kore.ModuleToKORE;
 import org.kframework.compile.AddSortInjections;
 import org.kframework.compile.ExpandMacros;
+import org.kframework.definition.Definition;
 import org.kframework.definition.Module;
 import org.kframework.kompile.CompiledDefinition;
+import org.kframework.kompile.Kompile;
 import org.kframework.kore.K;
 import org.kframework.main.FrontEnd;
+import org.kframework.parser.json.JsonParser;
 import org.kframework.parser.KRead;
 import org.kframework.parser.outer.Outer;
 import org.kframework.unparser.KPrint;
+import org.kframework.unparser.PrintOptions;
+import org.kframework.unparser.ToJson;
+import org.kframework.unparser.ToKast;
+import org.kframework.utils.Stopwatch;
 import org.kframework.utils.errorsystem.KEMException;
 import org.kframework.utils.errorsystem.KExceptionManager;
 import org.kframework.utils.file.Environment;
@@ -23,18 +32,19 @@ import org.kframework.utils.file.KompiledDir;
 import org.kframework.utils.file.TTYInfo;
 import org.kframework.utils.inject.CommonModule;
 import org.kframework.utils.inject.DefinitionScope;
-import org.kframework.utils.inject.JCommanderModule;
 import org.kframework.utils.inject.JCommanderModule.ExperimentalUsage;
 import org.kframework.utils.inject.JCommanderModule.Usage;
-import org.kframework.utils.Stopwatch;
+import org.kframework.utils.inject.JCommanderModule;
 import scala.Option;
 
 import java.io.File;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class KastFrontEnd extends FrontEnd {
 
@@ -82,6 +92,16 @@ public class KastFrontEnd extends FrontEnd {
         this.ttyInfo = ttyInfo;
     }
 
+    private static Module getModule(String defModule, Map<String, Module> modules, Definition oldDef) {
+        if (modules.containsKey(defModule))
+            return modules.get(defModule);
+        Option<Module> mod = oldDef.getModule(defModule);
+        if (mod.isDefined()) {
+            return mod.get();
+        }
+        throw KEMException.criticalError("Module " + defModule + " does not exist.");
+    }
+
     /**
      *
      * @return true if the application terminated normally; false otherwise
@@ -90,56 +110,77 @@ public class KastFrontEnd extends FrontEnd {
     public int run() {
         scope.enter(kompiledDir.get());
         try {
-            Reader stringToParse = options.stringToParse();
-            Source source = options.source();
+            if (options.definition) {
+                CompiledDefinition def = compiledDef.get();
+                Kompile kompile = new Kompile(def.kompileOptions, files.get(), kem, sw, true);
+                File proofFile = files.get().resolveWorkingDirectory(options.parameters.get(0));
+                String defModuleName = def.kompiledDefinition.mainModule().name();
+                String specModuleName = FilenameUtils.getBaseName(proofFile.getName()).toUpperCase();
+                Set<Module> modules = kompile.parseModules(def, defModuleName, files.get().resolveWorkingDirectory(proofFile).getAbsoluteFile());
+                Map<String, Module> modulesMap = new HashMap<>();
+                modules.forEach(m -> modulesMap.put(m.name(), m));
+                Module defModule = getModule(defModuleName, modulesMap, def.getParsedDefinition());
+                //Module specModule = getModule(specModuleName, modulesMap, def.getParsedDefinition());
+                //specModule = backend.specificationSteps(def.kompiledDefinition).apply(specModule);
+                Definition combinedDef = Definition.apply(defModule, def.getParsedDefinition().entryModules(), def.getParsedDefinition().att());
+                //Definition compiled = compileDefinition(backend, combinedDef);
+                
+                String out = new String(ToJson.apply(combinedDef));
+                System.out.println(out);
+                return 0;
+            } else {
+                Reader stringToParse = options.stringToParse();
+                Source source = options.source();
 
-            CompiledDefinition def = compiledDef.get();
-            KPrint kprint = new KPrint(kem, files.get(), ttyInfo, options.print, compiledDef.get().kompileOptions);
-            KRead kread = new KRead(kem, files.get());
+                CompiledDefinition def = compiledDef.get();
+                KPrint kprint = new KPrint(kem, files.get(), ttyInfo, options.print, compiledDef.get().kompileOptions);
+                KRead kread = new KRead(kem, files.get());
 
-            org.kframework.kore.Sort sort = options.sort;
-            if (sort == null) {
-                if (env.get("KRUN_SORT") != null) {
-                    sort = Outer.parseSort(env.get("KRUN_SORT"));
+                org.kframework.kore.Sort sort = options.sort;
+                if (sort == null) {
+                    if (env.get("KRUN_SORT") != null) {
+                        sort = Outer.parseSort(env.get("KRUN_SORT"));
+                    } else {
+                        sort = def.programStartSymbol;
+                    }
+                }
+                Module compiledMod;
+                if (options.module == null) {
+                    options.module = def.mainSyntaxModuleName();
+                    switch (options.input) {
+                    case KORE:
+                        compiledMod = def.languageParsingModule();
+                        break;
+                    default:
+                        compiledMod = def.kompiledDefinition.getModule(def.mainSyntaxModuleName()).get();
+                    }
                 } else {
-                    sort = def.programStartSymbol;
+                    compiledMod = def.kompiledDefinition.getModule(options.module).get();
                 }
-            }
-            Module compiledMod;
-            if (options.module == null) {
-                options.module = def.mainSyntaxModuleName();
-                switch (options.input) {
-                case KORE:
-                    compiledMod = def.languageParsingModule();
-                    break;
-                default:
-                    compiledMod = def.kompiledDefinition.getModule(def.mainSyntaxModuleName()).get();
+
+                Option<Module> maybeMod = def.programParsingModuleFor(options.module, kem);
+                if (maybeMod.isEmpty()) {
+                    throw KEMException.innerParserError("Module " + options.module + " not found. Specify a module with -m.");
                 }
-            } else {
-                compiledMod = def.kompiledDefinition.getModule(options.module).get();
-            }
-            Option<Module> maybeMod = def.programParsingModuleFor(options.module, kem);
-            if (maybeMod.isEmpty()) {
-                throw KEMException.innerParserError("Module " + options.module + " not found. Specify a module with -m.");
-            }
-            Module mod = maybeMod.get();
+                Module mod = maybeMod.get();
 
-            K parsed = kread.prettyRead(mod, sort, def, source, FileUtil.read(stringToParse), options.input);
+                K parsed = kread.prettyRead(mod, sort, def, source, FileUtil.read(stringToParse), options.input);
 
-            if (options.expandMacros || options.kore) {
-                parsed = ExpandMacros.forNonSentences(compiledMod, files.get(), def.kompileOptions, false).expand(parsed);
-            }
+                if (options.expandMacros || options.kore) {
+                    parsed = ExpandMacros.forNonSentences(compiledMod, files.get(), def.kompileOptions, false).expand(parsed);
+                }
 
-            if (options.kore) {
-              ModuleToKORE converter = new ModuleToKORE(compiledMod, files.get(), def.topCellInitializer, def.kompileOptions);
-              parsed = new AddSortInjections(compiledMod).addSortInjections(parsed, sort);
-              converter.convert(parsed);
-              System.out.println(converter.toString());
-            } else {
-              System.out.println(new String(kprint.prettyPrint(def, compiledMod, parsed), StandardCharsets.UTF_8));
+                if (options.kore) {
+                  ModuleToKORE converter = new ModuleToKORE(compiledMod, files.get(), def.topCellInitializer, def.kompileOptions);
+                  parsed = new AddSortInjections(compiledMod).addSortInjections(parsed, sort);
+                  converter.convert(parsed);
+                  System.out.println(converter.toString());
+                } else {
+                  System.out.println(new String(kprint.prettyPrint(def, compiledMod, parsed), StandardCharsets.UTF_8));
+                }
+                sw.printTotal("Total");
+                return 0;
             }
-            sw.printTotal("Total");
-            return 0;
         } finally {
             scope.exit();
         }
